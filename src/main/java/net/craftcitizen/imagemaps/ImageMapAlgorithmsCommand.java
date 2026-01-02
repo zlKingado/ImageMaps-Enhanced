@@ -11,7 +11,7 @@ import org.bukkit.command.CommandSender;
 public class ImageMapAlgorithmsCommand extends ImageMapSubCommand {
 
     public ImageMapAlgorithmsCommand(ImageMaps plugin) {
-        super("imagemaps.admin", plugin, true);
+        super("imagemaps.algorithms", plugin, false);
     }
 
     @Override
@@ -22,37 +22,44 @@ public class ImageMapAlgorithmsCommand extends ImageMapSubCommand {
         }
 
         getPlugin().sendMsg(sender, "cmd_algorithms_header");
+
+        sendAlgorithmInfo(sender, "Floyd-Steinberg", "FLOYD", "algo_desc_floyd");
+        sendAlgorithmInfo(sender, "Atkinson", "ATKINSON", "algo_desc_atkinson");
+        sendAlgorithmInfo(sender, "Burkes", "BURKES", "algo_desc_burkes");
+        sendAlgorithmInfo(sender, "Sierra", "SIERRA", "algo_desc_sierra");
         
-        sendAlgoInfo(sender, "FLOYD", getPlugin().getLang().getRawMessage(sender, "algo_desc_floyd"));
-        sendAlgoInfo(sender, "ATKINSON", getPlugin().getLang().getRawMessage(sender, "algo_desc_atkinson"));
-        sendAlgoInfo(sender, "BURKES", getPlugin().getLang().getRawMessage(sender, "algo_desc_burkes"));
-        sendAlgoInfo(sender, "SIERRA", getPlugin().getLang().getRawMessage(sender, "algo_desc_sierra"));
+        // NOVO: Adicionado RAW na lista
+        sendAlgorithmInfo(sender, "Raw", "RAW", "algo_desc_raw");
 
         getPlugin().sendMsg(sender, "cmd_algorithms_footer");
-        
         return null;
     }
 
-    private void sendAlgoInfo(CommandSender sender, String name, String desc) {
-        TextComponent message = new TextComponent("[" + name + "]");
-        message.setColor(ChatColor.AQUA);
+    private void sendAlgorithmInfo(CommandSender sender, String displayName, String algoCode, String descKey) {
+        String description = getPlugin().getLang().getRawMessage(sender, descKey);
+        // Mensagem de hover (ex: Clique para ativar RAW (0.8))
+        String hoverText = String.format(getPlugin().getLang().getRawMessage(sender, "algo_click_hover"), displayName);
+
+        // Botão Principal
+        TextComponent message = new TextComponent(" ➤ " + displayName);
+        message.setColor(ChatColor.GOLD);
         message.setBold(true);
-        message.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/imagemap reloadconfig 0.8 " + name));
-        
-        String hoverText = String.format(getPlugin().getLang().getRawMessage(sender, "algo_click_hover"), name);
+        // Ao clicar, aplica o algoritmo com força padrão 0.8
+        message.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/imagemap reloadconfig 0.8 " + algoCode));
         message.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder(hoverText).create()));
-        
-        TextComponent description = new TextComponent(" - " + desc);
-        description.setColor(ChatColor.WHITE);
-        description.setBold(false);
-        
-        message.addExtra(description);
-        
-        // CORREÇÃO: Usar sender.spigot().sendMessage() para componentes de chat
+
+        // Descrição abaixo
+        TextComponent desc = new TextComponent("\n    " + description);
+        desc.setColor(ChatColor.GRAY);
+        desc.setBold(false);
+
         sender.spigot().sendMessage(message);
+        sender.spigot().sendMessage(desc);
+        sender.spigot().sendMessage(new TextComponent("\n")); // Espaçamento
     }
 
     @Override
     public void help(CommandSender sender) {
+        getPlugin().sendMsg(sender, "help_algorithms");
     }
 }

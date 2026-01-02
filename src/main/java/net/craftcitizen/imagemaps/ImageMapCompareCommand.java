@@ -2,13 +2,15 @@ package net.craftcitizen.imagemaps;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class ImageMapCompareCommand extends ImageMapSubCommand {
 
     public ImageMapCompareCommand(ImageMaps plugin) {
-        super("imagemaps.admin", plugin, true);
+        super("imagemaps.compare", plugin, false);
     }
 
     @Override
@@ -18,40 +20,64 @@ public class ImageMapCompareCommand extends ImageMapSubCommand {
             return null;
         }
 
-        List<String> validAlgos = Arrays.asList("FLOYD", "ATKINSON", "BURKES", "SIERRA", "NONE", "CURRENT");
-
-        // /imagemap compare
+        // Se digitar apenas "/imagemap compare", desativa o modo.
         if (args.length == 1) {
-            getPlugin().setComparisonMode(true, "NONE", "CURRENT");
-            getPlugin().sendMsg(sender, "cmd_compare_active", "NONE", "CURRENT");
-            return null;
-        }
-
-        // /imagemap compare off
-        if (args.length == 2 && args[1].equalsIgnoreCase("off")) {
-            getPlugin().setComparisonMode(false, "NONE", "CURRENT");
+            getPlugin().setComparisonMode(false, "NONE", "NONE");
             getPlugin().sendMsg(sender, "cmd_compare_disabled");
             return null;
         }
 
-        // /imagemap compare <Algo1> <Algo2>
+        String left = args[1].toUpperCase();
+        String right = "CURRENT";
+
         if (args.length >= 3) {
-            String algo1 = args[1].toUpperCase();
-            String algo2 = args[2].toUpperCase();
+            right = args[2].toUpperCase();
+        }
 
-            if (!validAlgos.contains(algo1) || !validAlgos.contains(algo2)) {
-                 return null;
-            }
-
-            getPlugin().setComparisonMode(true, algo1, algo2);
-            getPlugin().sendMsg(sender, "cmd_compare_comparing", algo1, algo2);
+        if (!isValidAlgo(left) && !left.equals("CURRENT")) {
+            getPlugin().sendMsg(sender, "error_invalid_algorithm", left);
             return null;
+        }
+        if (!isValidAlgo(right) && !right.equals("CURRENT")) {
+            getPlugin().sendMsg(sender, "error_invalid_algorithm", right);
+            return null;
+        }
+
+        getPlugin().setComparisonMode(true, left, right);
+        
+        String displayRight = right.equals("CURRENT") ? getPlugin().getLang().getRawMessage(sender, "word_current") + " (" + getPlugin().getDitherAlgorithm() + ")" : right;
+        
+        getPlugin().sendMsg(sender, "cmd_compare_active", left, displayRight);
+        
+        if (left.equals(getPlugin().getDitherAlgorithm()) && right.equals("CURRENT")) {
+            getPlugin().sendMsg(sender, "warn_compare_same");
         }
 
         return null;
     }
+    
+    private boolean isValidAlgo(String algo) {
+        // RAW = Sem Algoritmo (Cru)
+        // NONE = Transparente (Ocultar)
+        return Arrays.asList("FLOYD", "ATKINSON", "BURKES", "SIERRA", "NONE", "RAW").contains(algo);
+    }
 
     @Override
     public void help(CommandSender sender) {
+        getPlugin().sendMsg(sender, "help_compare");
+    }
+
+    @Override
+    protected List<String> onTabComplete(CommandSender sender, String[] args) {
+        List<String> algos = Arrays.asList("FLOYD", "ATKINSON", "BURKES", "SIERRA", "RAW");
+        
+        if (args.length == 2) {
+            return de.craftlancer.core.Utils.getMatches(args[1], algos);
+        }
+        if (args.length == 3) {
+            return de.craftlancer.core.Utils.getMatches(args[2], algos);
+        }
+        
+        return Collections.emptyList();
     }
 }

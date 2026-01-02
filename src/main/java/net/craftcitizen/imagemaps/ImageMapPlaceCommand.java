@@ -31,24 +31,26 @@ public class ImageMapPlaceCommand extends ImageMapSubCommand {
         }
 
         String filename = args[1];
-        boolean isInvisible = false;
-        boolean isFixed = false;
-        boolean isGlowing = false;
-        Tuple<Integer, Integer> scale;
+        
+        // Carrega os padrões da config
+        boolean isInvisible = getPlugin().isDefaultInvisible();
+        boolean isFixed = getPlugin().isDefaultFixed();
+        boolean isGlowing = getPlugin().isDefaultGlowing();
+        Tuple<Integer, Integer> scale = new Tuple<>(-1, -1);
 
+        // Lógica de argumentos atualizada
         if (getPlugin().isInvisibilitySupported()) {
-            isInvisible = args.length >= 3 && Boolean.parseBoolean(args[2]);
-            isFixed = args.length >= 4 && Boolean.parseBoolean(args[3]);
+            if (args.length >= 3) isInvisible = Boolean.parseBoolean(args[2]);
+            if (args.length >= 4) isFixed = Boolean.parseBoolean(args[3]);
+            
             if (getPlugin().isGlowingSupported()) {
-                isGlowing = args.length >= 5 && Boolean.parseBoolean(args[4]);
-                scale = args.length >= 6 ? parseScale(args[5]) : new Tuple<>(-1, -1);
+                if (args.length >= 5) isGlowing = Boolean.parseBoolean(args[4]);
+                if (args.length >= 6) scale = parseScale(args[5]);
+            } else {
+                if (args.length >= 5) scale = parseScale(args[4]);
             }
-            else {
-                scale = args.length >= 5 ? parseScale(args[4]) : new Tuple<>(-1, -1);
-            }
-        }
-        else {
-            scale = args.length >= 3 ? parseScale(args[2]) : new Tuple<>(-1, -1);
+        } else {
+            if (args.length >= 3) scale = parseScale(args[2]);
         }
 
         if (filename.contains("/") || filename.contains("\\") || filename.contains(":")) {
@@ -69,6 +71,16 @@ public class ImageMapPlaceCommand extends ImageMapSubCommand {
         Tuple<Integer, Integer> size = getPlugin().getImageSize(filename, scale);
         
         getPlugin().sendMsg(sender, "cmd_started_placing", args[1], size.getKey(), size.getValue());
+        
+        // Tradução correta das propriedades
+        String yes = getPlugin().getLang().getRawMessage(sender, "word_yes");
+        String no = getPlugin().getLang().getRawMessage(sender, "word_no");
+        
+        getPlugin().sendMsg(sender, "cmd_place_properties", 
+                            isGlowing ? yes : no, 
+                            isInvisible ? yes : no, 
+                            isFixed ? yes : no);
+        
         getPlugin().sendMsg(sender, "cmd_right_click_corner");
         
         return null;
@@ -76,7 +88,7 @@ public class ImageMapPlaceCommand extends ImageMapSubCommand {
 
     @Override
     public void help(CommandSender sender) {
-        // Help messages can also be translated similarly if keys are added
+        getPlugin().sendMsg(sender, "help_place");
     }
 
     private static Tuple<Integer, Integer> parseScale(String string) {

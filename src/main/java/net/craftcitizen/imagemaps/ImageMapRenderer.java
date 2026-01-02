@@ -1,31 +1,31 @@
 package net.craftcitizen.imagemaps;
 
-import de.craftlancer.core.LambdaRunnable;
+import org.bukkit.entity.Player;
 import org.bukkit.map.MapCanvas;
 import org.bukkit.map.MapPalette;
 import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
-import org.bukkit.entity.Player;
 
+import java.awt.Color;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
-import java.awt.Color;
+import java.util.Arrays;
 
 public class ImageMapRenderer extends MapRenderer {
-    private ImageMaps plugin;
-
-    private BufferedImage image = null;
-    private boolean shouldRender = true;
-
+    private final ImageMaps plugin;
     private final int x;
     private final int y;
     private final double scale;
     
-    // Armazena a largura total da imagem original para cálculos globais
+    // OTIMIZAÇÃO: Cache de pixels processados (Bytes de cor do Minecraft)
+    private byte[] cachedPixels = null;
+    private boolean needsUpdate = true;
+    
     private int totalImageWidth = 0;
 
     public ImageMapRenderer(ImageMaps plugin, BufferedImage image, int x, int y, double scale) {
+        super(true); 
         this.plugin = plugin;
         this.x = x;
         this.y = y;
@@ -34,60 +34,69 @@ public class ImageMapRenderer extends MapRenderer {
     }
 
     public void recalculateInput(BufferedImage input) {
-        // Salva a largura total da imagem original antes de recortar
+        if (input == null) return;
+
         this.totalImageWidth = (int) Math.round(input.getWidth() * scale);
 
-        if (x * ImageMaps.MAP_WIDTH > Math.round(input.getWidth() * scale)
-            || y * ImageMaps.MAP_HEIGHT > Math.round(input.getHeight() * scale))
-            return;
+        int startX = (int) Math.floor(x * ImageMaps.MAP_WIDTH / scale);
+        int startY = (int) Math.floor(y * ImageMaps.MAP_HEIGHT / scale);
 
-        int x1 = (int) Math.floor(x * ImageMaps.MAP_WIDTH / scale);
-        int y1 = (int) Math.floor(y * ImageMaps.MAP_HEIGHT / scale);
+        if (startX >= input.getWidth() || startY >= input.getHeight()) return;
 
-        int x2 = (int) Math.ceil(Math.min(input.getWidth(), ((x + 1) * ImageMaps.MAP_WIDTH / scale)));
-        int y2 = (int) Math.ceil(Math.min(input.getHeight(), ((y + 1) * ImageMaps.MAP_HEIGHT / scale)));
+        int endX = (int) Math.ceil(Math.min(input.getWidth(), ((x + 1) * ImageMaps.MAP_WIDTH / scale)));
+        int endY = (int) Math.ceil(Math.min(input.getHeight(), ((y + 1) * ImageMaps.MAP_HEIGHT / scale)));
 
-        if (x2 - x1 <= 0 || y2 - y1 <= 0)
-            return;
+        int subWidth = endX - startX;
+        int subHeight = endY - startY;
 
-        this.image = input.getSubimage(x1, y1, x2 - x1, y2 - y1);
+        if (subWidth <= 0 || subHeight <= 0) return;
 
-        if (scale != 1D) {
+        BufferedImage subImage = input.getSubimage(startX, startY, subWidth, subHeight);
+
+        BufferedImage finalImage = subImage;
+        if (scale != 1.0) {
             BufferedImage resized = new BufferedImage(ImageMaps.MAP_WIDTH, ImageMaps.MAP_HEIGHT,
-                                                      input.getType() == 0 ? image.getType() : input.getType());
+                    input.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : input.getType());
             AffineTransform at = new AffineTransform();
             at.scale(scale, scale);
             AffineTransformOp scaleOp = new AffineTransformOp(at, AffineTransformOp.TYPE_BICUBIC);
-            this.image = scaleOp.filter(this.image, resized);
+            finalImage = scaleOp.filter(subImage, resized);
         }
 
-        shouldRender = true;
+        // Limpa cache anterior explicitamente
+        this.cachedPixels = null;
+        // Gera novos pixels
+        this.cachedPixels = ditherImage(finalImage);
+        // Marca para renderização
+        this.needsUpdate = true;
     }
 
     public void refresh() {
-        this.shouldRender = true;
+        this.needsUpdate = true;
     }
 
     @Override
     public void render(MapView view, MapCanvas canvas, Player player) {
-        if (image != null && shouldRender) {
-            new LambdaRunnable(() -> {
-                ditherImage(canvas, image);
-            }).runTaskLater(plugin, System.nanoTime() % 60);
-            
-            shouldRender = false;
+        // Só desenha se houver dados E se precisar de atualização (economiza CPU)
+        if (cachedPixels != null && needsUpdate) {
+            for (int i = 0; i < cachedPixels.length; i++) {
+                int px = i % ImageMaps.MAP_WIDTH;
+                int py = i / ImageMaps.MAP_WIDTH;
+                canvas.setPixel(px, py, cachedPixels[i]);
+            }
+            needsUpdate = false;
         }
     }
 
-    private void ditherImage(MapCanvas canvas, BufferedImage img) {
+    private byte[] ditherImage(BufferedImage img) {
         int width = img.getWidth();
         int height = img.getHeight();
+        byte[] pixels = new byte[ImageMaps.MAP_WIDTH * ImageMaps.MAP_HEIGHT];
         
+        Arrays.fill(pixels, (byte) 0);
+
         float[][][] buffer = new float[width][height][3];
-        
         boolean debugging = plugin.isComparing();
-        
-        // Ponto de divisão GLOBAL (metade da imagem inteira na parede)
         int globalSplitX = totalImageWidth / 2;
 
         for (int i = 0; i < width; i++) {
@@ -101,18 +110,18 @@ public class ImageMapRenderer extends MapRenderer {
 
         for (int j = 0; j < height; j++) {
             for (int i = 0; i < width; i++) {
-                
-                // Calcula a posição X absoluta deste pixel na imagem completa
-                // (Índice do Mapa * 128) + Pixel Atual
+                if (i >= ImageMaps.MAP_WIDTH || j >= ImageMaps.MAP_HEIGHT) continue;
+
                 int globalX = (this.x * ImageMaps.MAP_WIDTH) + i;
 
-                // Se estiver comparando, reseta erro na linha divisória global
                 if (debugging && globalX == globalSplitX) {
-                    buffer[i][j][0] = (img.getRGB(i,j) >> 16) & 0xFF;
-                    buffer[i][j][1] = (img.getRGB(i,j) >> 8) & 0xFF;
-                    buffer[i][j][2] = img.getRGB(i,j) & 0xFF;
+                    // Linha preta divisória no modo debug
+                    int arrayIndex = j * ImageMaps.MAP_WIDTH + i;
+                    pixels[arrayIndex] = (byte) 119; 
+                    continue;
                 }
 
+                // Pega cor do buffer (que pode ter erro acumulado de pixels anteriores)
                 int oldR = clamp(Math.round(buffer[i][j][0]));
                 int oldG = clamp(Math.round(buffer[i][j][1]));
                 int oldB = clamp(Math.round(buffer[i][j][2]));
@@ -120,31 +129,32 @@ public class ImageMapRenderer extends MapRenderer {
                 int pixelRGB = img.getRGB(i, j);
                 int alpha = (pixelRGB >> 24) & 0xFF;
                 
+                int arrayIndex = j * ImageMaps.MAP_WIDTH + i;
+
                 if (alpha < 128) {
-                    canvas.setPixel(i, j, (byte) 0);
+                    pixels[arrayIndex] = (byte) 0;
                     continue;
                 }
 
-                // @SuppressWarnings("deprecation")
+                // Encontra a cor mais próxima na paleta do Minecraft
+                @SuppressWarnings("deprecation")
                 byte index = MapPalette.matchColor(oldR, oldG, oldB);
-                canvas.setPixel(i, j, index);
                 
-                // Desenha a linha preta guia EXATAMENTE no meio da imagem completa
-                if (debugging && globalX == globalSplitX) {
-                    canvas.setPixel(i, j, (byte) 119); 
-                    continue;
-                }
+                pixels[arrayIndex] = index;
 
+                // Define qual algoritmo usar neste pixel
                 String activeAlgo;
                 float activeStrength;
                 
                 if (debugging) {
-                    // Decide o lado baseado na coordenada GLOBAL
                     String selection = (globalX < globalSplitX) ? plugin.getCompareLeft() : plugin.getCompareRight();
                     
                     if (selection.equals("NONE")) {
-                        continue; 
-                    } else if (selection.equals("CURRENT")) {
+                         pixels[arrayIndex] = (byte) 0;
+                         continue;
+                    }
+                    
+                    if (selection.equals("CURRENT")) {
                         activeAlgo = plugin.getDitherAlgorithm();
                         activeStrength = plugin.getDitherStrength();
                     } else {
@@ -156,6 +166,12 @@ public class ImageMapRenderer extends MapRenderer {
                     activeStrength = plugin.getDitherStrength();
                 }
 
+                // Se for RAW, paramos aqui! Não calcula erro nem distribui.
+                if (activeAlgo.equals("RAW")) {
+                    continue;
+                }
+
+                // Calcula erro de quantização (diferença entre cor original e cor da paleta)
                 Color paletteColor = MapPalette.getColor(index);
                 int newR = paletteColor.getRed();
                 int newG = paletteColor.getGreen();
@@ -165,6 +181,7 @@ public class ImageMapRenderer extends MapRenderer {
                 float errG = (oldG - newG) * activeStrength;
                 float errB = (oldB - newB) * activeStrength;
 
+                // Distribui o erro para vizinhos
                 switch (activeAlgo) {
                     case "ATKINSON":
                         distribute(buffer, i + 1, j, errR, errG, errB, 1.0f/8.0f, width, height);
@@ -198,6 +215,7 @@ public class ImageMapRenderer extends MapRenderer {
                 }
             }
         }
+        return pixels;
     }
 
     private void distribute(float[][][] buffer, int x, int y, float errR, float errG, float errB, float factor, int width, int height) {

@@ -5,8 +5,19 @@ toggleItem: WOODEN_HOE
 # FLOYD    - Padrão. Bom para fotos realistas, mas gera ruído em cores sólidas.
 # ATKINSON - Recomendado para ANIME/LOGOS. Mantém áreas limpas e alto contraste.
 # BURKES   - Similar ao Floyd, mas ligeiramente mais suave.
+# RAW      - Sem filtro. Apenas escolhe a cor mais próxima. Limpo, mas ruim em degradês.
 ditherAlgorithm: ATKINSON
 
 # Força do efeito (0.0 a 1.0)
 # 0.6 é o padrão equilibrado. Se usar ATKINSON, pode tentar subir para 0.8 ou 1.0.
 ditherStrength: 0.8
+
+# Opções Padrão de Colocação
+# Defina o comportamento padrão ao colocar novas imagens se os argumentos não forem informados.
+defaultPlacement:
+  # Se true, usa Item Frame Luminoso (Glow) por padrão (requer 1.17+)
+  glowing: false
+  # Se true, o frame será invisível por padrão (requer 1.16+)
+  invisible: false
+  # Se true, o frame não poderá ser quebrado por jogadores comuns (requer 1.16+)
+  fixed: false

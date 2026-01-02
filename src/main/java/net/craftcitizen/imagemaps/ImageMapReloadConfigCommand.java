@@ -2,13 +2,11 @@ package net.craftcitizen.imagemaps;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
-import java.util.Arrays;
-import java.util.List;
 
 public class ImageMapReloadConfigCommand extends ImageMapSubCommand {
 
     public ImageMapReloadConfigCommand(ImageMaps plugin) {
-        super("imagemaps.admin", plugin, true);
+        super("imagemaps.reloadconfig", plugin, false);
     }
 
     @Override
@@ -18,37 +16,37 @@ public class ImageMapReloadConfigCommand extends ImageMapSubCommand {
             return null;
         }
 
-        Float newStrength = null;
-        String newAlgorithm = null;
-        List<String> validAlgorithms = Arrays.asList("FLOYD", "ATKINSON", "BURKES", "SIERRA");
+        Float strength = null;
+        String algorithm = null;
 
+        // Lógica de Argumentos Flexível:
+        // 1. /imagemap reloadconfig -> Recarrega do disco
+        // 2. /imagemap reloadconfig 0.8 -> Define força
+        // 3. /imagemap reloadconfig RAW -> Define algoritmo
+        // 4. /imagemap reloadconfig 0.8 RAW -> Define ambos
+        
         if (args.length >= 2) {
+            // Tenta ler o primeiro argumento como número
             try {
-                newStrength = Float.parseFloat(args[1]);
-                if (newStrength < 0.0f || newStrength > 1.0f) {
-                     // Você pode adicionar chaves específicas para esses erros de validação
-                     getPlugin().sendMsg(sender, "cmd_must_specify_filename"); // Placeholder temporário
-                     return null;
-                }
+                strength = Float.parseFloat(args[1]);
             } catch (NumberFormatException e) {
-                return null;
+                // Se falhar, assume que é o nome do algoritmo (ex: reloadconfig RAW)
+                algorithm = args[1].toUpperCase();
             }
         }
-
+        
         if (args.length >= 3) {
-            String inputAlgo = args[2].toUpperCase();
-            if (validAlgorithms.contains(inputAlgo)) {
-                newAlgorithm = inputAlgo;
-            } else {
-                return null;
-            }
+            // Se tiver 3 argumentos, o segundo (índice 2) deve ser o algoritmo
+            algorithm = args[2].toUpperCase();
         }
-
-        getPlugin().reloadPluginConfig(sender, newStrength, newAlgorithm);
+        
+        // Aplica as mudanças
+        getPlugin().reloadPluginConfig(sender, strength, algorithm);
         return null;
     }
 
     @Override
     public void help(CommandSender sender) {
+        getPlugin().sendMsg(sender, "help_reloadconfig");
     }
 }

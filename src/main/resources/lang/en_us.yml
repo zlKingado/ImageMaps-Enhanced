@@ -1,33 +1,48 @@
 prefix: "&7[&bImageMaps&7] "
+
+# General Commands & Errors
 cmd_no_permission: "&cYou do not have permission to use this command."
 cmd_must_specify_filename: "&eYou must specify a file name."
 cmd_filename_illegal: "&eFilename contains illegal characters."
 cmd_no_image_exists: "&eNo image with this name exists."
 cmd_started_placing: "&aStarted placing of %s. It needs a %d by %d area."
+cmd_place_properties: "&7Current Properties: &fGlowing: %s &7| &fInvisible: %s &7| &fFixed: %s"
 cmd_right_click_corner: "&aRight click on the block that should be the upper left corner."
+action_cancelled: "&eImage placement cancelled."
+action_cancelled_plugin: "&eImage placement cancelled by another plugin."
+error_invalid_algorithm: "&cInvalid algorithm: %s"
+warn_compare_same: "&eWarning: You are comparing the current algorithm with itself. No difference will be visible."
+
+# Placement Errors
+error_insufficient_wall: "&eMap couldn't be placed, the supporting wall is too small."
+error_insufficient_space: "&eMap couldn't be placed, the space is blocked."
+error_overlapping: "&eMap couldn't be placed, there is another entity in the way."
+error_invalid_facing: "&eYou cannot place images in this direction."
+error_invalid_direction: "&eInvalid direction."
+
+# Download
 cmd_download_invalid_url: "&eDownload URL is not valid."
 cmd_download_failed: "&eDownload failed, HTTP Error code %d."
 cmd_download_not_image: "&eDownload is a %s file, not an image."
 cmd_download_not_image_content: "&eDownloaded file is not an image!"
 cmd_download_exists: "&eFile already exists, overwriting!"
 cmd_download_complete: "&aDownload complete."
+
+# Delete/Reload/Cleanup
 cmd_delete_success: "&aFile deleted."
 cmd_delete_failed: "&eFailed to delete file."
 cmd_reload_success: "&aImage reloaded."
 cmd_reload_failed: "&eImage couldn't be reloaded (does it exist?)."
 cmd_cleanup_success: "&aRemoved %d invalid images/maps."
+
+# Config & Compare
 cmd_config_reloaded: "&aConfig reloaded! Strength: %.2f | Algorithm: %s"
 cmd_config_saved: "&aConfig saved! Strength: %.2f | Algorithm: %s"
 cmd_compare_active: "&aComparison Mode ACTIVE: [%s] | [%s]"
 cmd_compare_disabled: "&eComparison Mode DISABLED."
 cmd_compare_comparing: "&aComparing: [%s] vs [%s]"
-cmd_algorithms_header: "&6=== Dithering Algorithms (Click to Test) ==="
-cmd_algorithms_footer: "&eUse: /imagemap compare [Algo1] [Algo2] to see side-by-side."
-action_cancelled: "&eImage placement cancelled."
-action_cancelled_plugin: "&eImage placement cancelled by another plugin."
-error_insufficient_wall: "&eMap couldn't be placed, the supporting wall is too small."
-error_insufficient_space: "&eMap couldn't be placed, the space is blocked."
-error_overlapping: "&eMap couldn't be placed, there is another entity in the way."
+
+# Item Interaction
 toggle_fixed: "&aFrame set to %s."
 toggle_visible: "&aFrame set to %s."
 fixed: "fixed"
@@ -35,21 +50,51 @@ unfixed: "unfixed"
 visible: "visible"
 invisible: "invisible"
 
-# Algoritmos
+# Keywords
+word_fixed: "fixed"
+word_unfixed: "unfixed"
+word_visible: "visible"
+word_invisible: "invisible"
+word_yes: "&aYes"
+word_no: "&cNo"
+word_glowing: "&bGlowing"
+word_normal: "&7Normal"
+word_current: "Current"
+
+# Swap Command
+cmd_swap_usage: "&cUsage: /imagemap swap <normal|glowing> <radius> [filename]"
+cmd_swap_not_supported: "&cGlow Item Frames require Minecraft 1.17+."
+cmd_swap_invalid_type: "&cInvalid type. Use 'normal' or 'glowing'."
+cmd_swap_invalid_radius: "&cRadius must be between 1 and 100."
+cmd_swap_success: "&aSuccessfully swapped %d item frames to %s."
+
+# Algorithms Descriptions
+cmd_algorithms_header: "&6=== Dithering Algorithms (Click to Test) ==="
+cmd_algorithms_footer: "&eUse: /imagemap compare [Algo1] [Algo2] to see side-by-side."
 algo_desc_floyd: "Standard algorithm. Good for realistic photos, but creates noise in solid colors."
 algo_desc_atkinson: "Recommended for Anime/Cartoons. Preserves contrast and cleans up noise."
 algo_desc_burkes: "Similar to Floyd, but smoother on horizontal lines."
 algo_desc_sierra: "Sierra Lite. Fast and clean noise patterns. Good balance."
+algo_desc_raw: "No dither. Uses the closest color from the palette. Clean image, but less detail in gradients."
 algo_click_hover: "&7Click to activate %s (0.8)"
 
 # List Command
-list_header: "&e## Image List Page %d of %d ##"
-list_action_info: "&6[Info]"
-list_action_reload: "&6[Reload]"
-list_action_place: "&6[Place]"
-list_action_delete: "&c[Delete]"
-list_nav_prev: "&f<< Page %d"
-list_nav_next: "&fPage %d >>"
+list_header: "&e======= &6Image List &e(Page %d/%d) &e======="
+list_action_info: "[Info]"
+list_action_reload: "[Reload]"
+list_action_place: "[Place]"
+list_action_delete: "[Delete]"
+list_action_glow: "[Glow]"
+list_action_normal: "[Normal]"
+list_nav_prev: "« Prev"
+list_nav_next: "Next »"
+
+# Hover Messages
+msg_click_info: "Click to view information"
+msg_click_place: "Click to place image"
+msg_click_glow: "Swap nearby to Glowing"
+msg_click_normal: "Swap nearby to Normal"
+msg_click_delete: "Click to delete file"
 
 # Info Command
 info_header: "&bImage Information:"
@@ -67,18 +112,22 @@ debug_suffixes: "&7Suffixes: %s"
 debug_mime: "&7MIME: %s"
 debug_cache: "&7Uses Cache: %s"
 
-# Help Messages
-help_place: "starts image placement"
-help_download: "downloads an image from an URL"
-help_delete: "deletes an image"
-help_info: "displays image info"
-help_reload: "reloads an image from disk"
-help_reloadconfig: "reloads config or sets dither strength"
-help_algorithms: "lists available algorithms"
-help_compare: "split screen comparison"
-help_list: "lists all files in the images folder"
-help_cleanup: "removes invalid maps from plugin"
-help_help: "shows help"
-help_debug: "prints debug info"
+# Help
+help_github_label: "           [ Github / Source Code ]"
+help_github_hover: "Click to view source code"
+
+help_place: "Place image in the world"
+help_download: "Download image from URL"
+help_delete: "Delete image file"
+help_info: "View image details"
+help_reload: "Reload image from disk"
+help_reloadconfig: "Reload configuration"
+help_algorithms: "List color algorithms"
+help_compare: "Compare algorithms"
+help_list: "List all saved images"
+help_cleanup: "Clean up broken maps"
+help_swap: "Swap frame types (Glowing/Normal)"
+help_help: "Show this help"
+help_debug: "Technical info"
 help_place_size: "Size format: XxY -> 5x2, use -1 for default"
 help_place_scaling: "The plugin will scale the map to fit while maintaining aspect ratio."

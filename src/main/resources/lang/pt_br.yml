@@ -1,33 +1,48 @@
 prefix: "&7[&bImageMaps&7] "
+
+# Comandos Gerais e Erros
 cmd_no_permission: "&cVocê não tem permissão para usar este comando."
 cmd_must_specify_filename: "&eVocê deve especificar um nome de arquivo."
 cmd_filename_illegal: "&eO nome do arquivo contém caracteres ilegais."
 cmd_no_image_exists: "&eNenhuma imagem com esse nome existe."
 cmd_started_placing: "&aColocação de %s iniciada. Requer uma área de %d por %d."
+cmd_place_properties: "&7Propriedades Atuais: &fLuminoso: %s &7| &fInvisível: %s &7| &fFixo: %s"
 cmd_right_click_corner: "&aClique com o botão direito no bloco que será o canto superior esquerdo."
+action_cancelled: "&eColocação de imagem cancelada."
+action_cancelled_plugin: "&eColocação cancelada por outro plugin."
+error_invalid_algorithm: "&cAlgoritmo inválido: %s"
+warn_compare_same: "&eAviso: Você está comparando o algoritmo atual com ele mesmo. Nenhuma diferença será visível."
+
+# Erros de Colocação
+error_insufficient_wall: "&eMapa não pôde ser colocado, a parede de suporte é muito pequena."
+error_insufficient_space: "&eMapa não pôde ser colocado, o espaço está bloqueado."
+error_overlapping: "&eMapa não pôde ser colocado, há outra entidade no caminho."
+error_invalid_facing: "&eVocê não pode colocar imagens nesta direção."
+error_invalid_direction: "&eDireção inválida."
+
+# Download
 cmd_download_invalid_url: "&eURL de download inválida."
 cmd_download_failed: "&eFalha no download, erro HTTP %d."
 cmd_download_not_image: "&eO download é um arquivo %s, não uma imagem."
 cmd_download_not_image_content: "&eO arquivo baixado não é uma imagem!"
 cmd_download_exists: "&eArquivo já existe, sobrescrevendo!"
 cmd_download_complete: "&aDownload concluído."
+
+# Delete/Reload/Cleanup
 cmd_delete_success: "&aArquivo deletado."
 cmd_delete_failed: "&eFalha ao deletar arquivo."
 cmd_reload_success: "&aImagem recarregada."
 cmd_reload_failed: "&eImagem não pôde ser recarregada (ela existe?)."
 cmd_cleanup_success: "&aRemovidos %d mapas/imagens inválidos."
+
+# Configuração e Comparação
 cmd_config_reloaded: "&aConfiguração recarregada! Força: %.2f | Algoritmo: %s"
 cmd_config_saved: "&aConfiguração salva! Força: %.2f | Algoritmo: %s"
 cmd_compare_active: "&aModo Comparação ATIVO: [%s] | [%s]"
 cmd_compare_disabled: "&eModo Comparação DESATIVADO."
 cmd_compare_comparing: "&aComparando: [%s] vs [%s]"
-cmd_algorithms_header: "&6=== Algoritmos de Suavização (Clique para Testar) ==="
-cmd_algorithms_footer: "&eUse: /imagemap compare [Algo1] [Algo2] para ver lado a lado."
-action_cancelled: "&eColocação de imagem cancelada."
-action_cancelled_plugin: "&eColocação cancelada por outro plugin."
-error_insufficient_wall: "&eMapa não pôde ser colocado, a parede de suporte é muito pequena."
-error_insufficient_space: "&eMapa não pôde ser colocado, o espaço está bloqueado."
-error_overlapping: "&eMapa não pôde ser colocado, há outra entidade no caminho."
+
+# Interação com Item (Hoe)
 toggle_fixed: "&aMoldura definida como %s."
 toggle_visible: "&aMoldura definida como %s."
 fixed: "fixa"
@@ -35,21 +50,51 @@ unfixed: "solta"
 visible: "visível"
 invisible: "invisível"
 
-# Algoritmos
+# Palavras Chave
+word_fixed: "fixa"
+word_unfixed: "solta"
+word_visible: "visível"
+word_invisible: "invisível"
+word_yes: "&aSim"
+word_no: "&cNão"
+word_glowing: "&bLuminoso"
+word_normal: "&7Normal"
+word_current: "Atual"
+
+# Swap Command
+cmd_swap_usage: "&cUso: /imagemap swap <normal|luminoso> <raio> [arquivo]"
+cmd_swap_not_supported: "&cMolduras Luminosas requerem Minecraft 1.17 ou superior."
+cmd_swap_invalid_type: "&cTipo inválido. Use 'normal' ou 'luminoso'."
+cmd_swap_invalid_radius: "&cO raio deve ser um número entre 1 e 100."
+cmd_swap_success: "&aTrocadas %d molduras para o tipo %s com sucesso."
+
+# Algoritmos Descrições
+cmd_algorithms_header: "&6=== Algoritmos de Suavização (Clique para Testar) ==="
+cmd_algorithms_footer: "&eUse: /imagemap compare [Algo1] [Algo2] para ver lado a lado."
 algo_desc_floyd: "Padrão clássico. Bom para fotos, mas gera ruído em cores sólidas."
 algo_desc_atkinson: "Recomendado para Anime/Cartoons. Limpa o ruído e preserva contraste."
 algo_desc_burkes: "Similar ao Floyd, mas mais suave em linhas horizontais."
 algo_desc_sierra: "Sierra Lite. Rápido e com padrões de ruído agradáveis."
+algo_desc_raw: "Sem dither. Usa a cor exata mais próxima. Limpo, mas perde detalhes em degradês."
 algo_click_hover: "&7Clique para ativar %s (0.8)"
 
 # List Command
-list_header: "&e## Lista de Imagens Página %d de %d ##"
-list_action_info: "&6[Info]"
-list_action_reload: "&6[Recarregar]"
-list_action_place: "&6[Colocar]"
-list_action_delete: "&c[Deletar]"
-list_nav_prev: "&f<< Pág %d"
-list_nav_next: "&fPág %d >>"
+list_header: "&e======= &6Lista de Imagens &e(Pág %d/%d) &e======="
+list_action_info: "[Info]"
+list_action_reload: "[Recarregar]"
+list_action_place: "[Colocar]"
+list_action_delete: "[Deletar]"
+list_action_glow: "[Luminoso]"
+list_action_normal: "[Normal]"
+list_nav_prev: "« Anterior"
+list_nav_next: "Próxima »"
+
+# Mensagens Hover
+msg_click_info: "Clique para ver informações"
+msg_click_place: "Clique para colocar a imagem"
+msg_click_glow: "Trocar imagens próximas para Luminoso"
+msg_click_normal: "Trocar imagens próximas para Normal"
+msg_click_delete: "Clique para deletar o arquivo"
 
 # Info Command
 info_header: "&bInformações da Imagem:"
@@ -67,18 +112,22 @@ debug_suffixes: "&7Sufixos: %s"
 debug_mime: "&7MIME: %s"
 debug_cache: "&7Usa Cache: %s"
 
-# Help Messages
-help_place: "inicia a colocação da imagem"
-help_download: "baixa uma imagem de uma URL"
-help_delete: "deleta uma imagem"
-help_info: "exibe informações da imagem"
-help_reload: "recarrega uma imagem do disco"
-help_reloadconfig: "recarrega config ou define força do dither"
-help_algorithms: "lista algoritmos disponíveis"
-help_compare: "comparação em tela dividida"
-help_list: "lista todos os arquivos na pasta images"
-help_cleanup: "remove mapas inválidos do plugin"
-help_help: "mostra ajuda"
-help_debug: "exibe informações de debug"
+# Help
+help_github_label: "           [ Github / Código Fonte ]"
+help_github_hover: "Clique para ver o código fonte"
+
+help_place: "Colocar imagem no mundo"
+help_download: "Baixar imagem da internet"
+help_delete: "Deletar arquivo de imagem"
+help_info: "Ver detalhes da imagem"
+help_reload: "Recarregar imagem do disco"
+help_reloadconfig: "Recarregar configurações"
+help_algorithms: "Listar algoritmos de cor"
+help_compare: "Comparar algoritmos"
+help_list: "Listar todas imagens salvas"
+help_cleanup: "Limpar mapas quebrados"
+help_swap: "Trocar molduras (Luminoso/Normal)"
+help_help: "Ver esta ajuda"
+help_debug: "Informações técnicas"
 help_place_size: "Formato de tamanho: XxY -> 5x2, use -1 para padrão"
 help_place_scaling: "O plugin vai escalar o mapa mantendo a proporção."

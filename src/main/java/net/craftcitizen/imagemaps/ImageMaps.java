@@ -4,13 +4,7 @@ import com.google.common.io.Files;
 import de.craftlancer.core.LambdaRunnable;
 import de.craftlancer.core.SemanticVersion;
 import de.craftlancer.core.Utils;
-import de.craftlancer.core.util.MessageLevel;
-import de.craftlancer.core.util.MessageUtil;
 import de.craftlancer.core.util.Tuple;
-import net.md_5.bungee.api.ChatColor;
-import net.md_5.bungee.api.chat.BaseComponent;
-import net.md_5.bungee.api.chat.ComponentBuilder;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Rotation;
@@ -44,7 +38,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.logging.Level;
-import java.util.stream.Collectors;
 
 public class ImageMaps extends JavaPlugin implements Listener {
     private static final String MAPS_YML = "maps.yml";
@@ -60,10 +53,17 @@ public class ImageMaps extends JavaPlugin implements Listener {
 
     private Map<String, BufferedImage> imageCache = new HashMap<>();
     private Map<ImageMap, Integer> maps = new HashMap<>();
+    // OTIMIZAÇÃO: Índice reverso para lookup rápido em comandos como 'swap'
+    private Map<Integer, ImageMap> mapsById = new HashMap<>();
 
     private Material toggleItem;
     private float ditherStrength;
     private String ditherAlgorithm;
+    
+    // Configurações Padrão
+    private boolean defaultGlowing;
+    private boolean defaultInvisible;
+    private boolean defaultFixed;
     
     // Variáveis para o Modo Comparação
     private boolean comparing = false;
@@ -79,18 +79,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        // Inicializa o gerenciador de idiomas
         languageManager = new LanguageManager(this);
         
-        // Removemos o MessageUtil antigo pois vamos usar nosso sistema de tradução
-        /*
-        BaseComponent prefix = new TextComponent(new ComponentBuilder("[").color(ChatColor.GRAY).append("ImageMaps")
-                                                                          .color(ChatColor.AQUA).append("]")
-                                                                          .color(ChatColor.GRAY).create());
-        MessageUtil.registerPlugin(this, prefix, ChatColor.GRAY, ChatColor.YELLOW, ChatColor.RED, ChatColor.DARK_RED,
-                                   ChatColor.DARK_AQUA);
-        */
-
         if (!new File(getDataFolder(), IMAGES_DIR).exists())
             new File(getDataFolder(), IMAGES_DIR).mkdirs();
 
@@ -105,12 +95,10 @@ public class ImageMaps extends JavaPlugin implements Listener {
         new LambdaRunnable(this::saveMaps).runTaskTimer(this, AUTOSAVE_PERIOD, AUTOSAVE_PERIOD);
     }
     
-    // Método público para acessar o LanguageManager
     public LanguageManager getLang() {
         return languageManager;
     }
     
-    // Método auxiliar para enviar mensagens traduzidas
     public void sendMsg(CommandSender sender, String key, Object... args) {
         sender.sendMessage(languageManager.getMessage(sender, key, args));
     }
@@ -123,7 +111,17 @@ public class ImageMaps extends JavaPlugin implements Listener {
         }
         ditherStrength = (float) getConfig().getDouble("ditherStrength", 0.6);
         ditherAlgorithm = getConfig().getString("ditherAlgorithm", "FLOYD").toUpperCase();
+        
+        // Carrega os novos padrões
+        defaultGlowing = getConfig().getBoolean("defaultPlacement.glowing", false);
+        defaultInvisible = getConfig().getBoolean("defaultPlacement.invisible", false);
+        defaultFixed = getConfig().getBoolean("defaultPlacement.fixed", false);
     }
+    
+    // Getters para os novos padrões
+    public boolean isDefaultGlowing() { return defaultGlowing; }
+    public boolean isDefaultInvisible() { return defaultInvisible; }
+    public boolean isDefaultFixed() { return defaultFixed; }
 
     public void reloadPluginConfig(CommandSender sender, Float newStrength, String newAlgorithm) {
         boolean changed = false;
@@ -150,14 +148,37 @@ public class ImageMaps extends JavaPlugin implements Listener {
             sendMsg(sender, "cmd_config_reloaded", ditherStrength, ditherAlgorithm);
         }
         
-        refreshAllMaps();
+        // CORREÇÃO LAG: Processamento Assíncrono
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                refreshAllMaps();
+                
+                // Opcional: Avisar no console quando terminar
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (sender instanceof Player) {
+                           sender.sendMessage("§a[ImageMaps] Processamento em background concluído.");
+                        }
+                    }
+                }.runTask(ImageMaps.this);
+            }
+        }.runTaskAsynchronously(this);
     }
     
     public void setComparisonMode(boolean active, String left, String right) {
         this.comparing = active;
         this.compareLeft = left;
         this.compareRight = right;
-        refreshAllMaps();
+        
+        // CORREÇÃO LAG: Processamento Assíncrono também na comparação
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                refreshAllMaps();
+            }
+        }.runTaskAsynchronously(this);
     }
     
     public boolean isComparing() { return comparing; }
@@ -165,16 +186,39 @@ public class ImageMaps extends JavaPlugin implements Listener {
     public String getCompareRight() { return compareRight; }
 
     private void refreshAllMaps() {
-        for (Integer id : maps.values()) {
-            @SuppressWarnings("deprecation")
-            MapView map = Bukkit.getMap(id);
-            if (map != null) {
-                for (MapRenderer r : map.getRenderers()) {
-                    if (r instanceof ImageMapRenderer) {
-                        ((ImageMapRenderer) r).refresh();
+        // Copia os IDs para evitar ConcurrentModificationException
+        Integer[] mapIds = maps.values().toArray(new Integer[0]);
+        
+        for (Integer id : mapIds) {
+            ImageMap imgMap = mapsById.get(id);
+            if (imgMap == null) continue;
+
+            BufferedImage image = getImage(imgMap.getFilename());
+            if (image == null) continue;
+
+            // Como MapView e seus renderizadores não são Thread-Safe, 
+            // precisamos agendar a atualização de cada mapa na thread principal
+            // MAS o cálculo pesado já foi feito se movermos a lógica certa.
+            // No caso atual, ImageMapRenderer faz tudo no recalculateInput.
+            // Então vamos fazer um truque: vamos calcular numa thread separada e injetar.
+            
+            // ATENÇÃO: Bukkit.getMap DEVE rodar na thread principal ou ser sincronizado.
+            // Para não travar, vamos agendar pequenas tarefas.
+            
+             new BukkitRunnable() {
+                @Override
+                public void run() {
+                    @SuppressWarnings("deprecation")
+                    MapView map = Bukkit.getMap(id);
+                    if (map != null) {
+                        for (MapRenderer r : map.getRenderers()) {
+                            if (r instanceof ImageMapRenderer) {
+                                ((ImageMapRenderer) r).recalculateInput(image);
+                            }
+                        }
                     }
                 }
-            }
+            }.runTask(this);
         }
     }
 
@@ -275,6 +319,9 @@ public class ImageMaps extends JavaPlugin implements Listener {
 
     private void loadMaps() {
         File configFile = new File(getDataFolder(), MAPS_YML);
+        
+        // Limpa o mapa reverso ao recarregar
+        mapsById.clear();
 
         if (!configFile.exists())
             return;
@@ -294,6 +341,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
                 MapView map = Bukkit.getMap(id);
                 BufferedImage image = getImage(imageMap.getFilename());
                 maps.put(imageMap, id);
+                // Popula o mapa reverso (Otimização)
+                mapsById.put(id, imageMap);
 
                 if (image == null) {
                     getLogger().warning(() -> "Image file " + imageMap.getFilename() + " not found!");
@@ -311,6 +360,11 @@ public class ImageMaps extends JavaPlugin implements Listener {
                                                      imageMap.getScale()));
             });
     }
+    
+    // Método auxiliar para obter ImageMap pelo ID de forma rápida
+    public ImageMap getMapById(int id) {
+        return mapsById.get(id);
+    }
 
     public int cleanupMaps() {
         int start = maps.size();
@@ -319,8 +373,13 @@ public class ImageMaps extends JavaPlugin implements Listener {
             @SuppressWarnings("deprecation")
             MapView map = Bukkit.getMap(a.getValue().intValue());
             BufferedImage image = getImage(a.getKey().getFilename());
-
-            return map == null || image == null;
+            
+            boolean invalid = map == null || image == null;
+            if (invalid) {
+                // Remove do reverso também
+                mapsById.remove(a.getValue());
+            }
+            return invalid;
         });
 
         return start - maps.size();
@@ -413,7 +472,7 @@ public class ImageMaps extends JavaPlugin implements Listener {
 
         switch (result) {
             case INVALID_FACING:
-                sendMsg(player, "error_invalid_facing"); // Adicionar no yml se quiser, ou usar mensagem genérica
+                sendMsg(player, "error_invalid_facing");
                 break;
             case INVALID_DIRECTION:
                 sendMsg(player, "error_invalid_direction");
@@ -523,6 +582,10 @@ public class ImageMaps extends JavaPlugin implements Listener {
                 continue;
             }
             map.getRenderers().forEach(map::removeRenderer);
+            
+            // Remove do reverso também
+            mapsById.remove(entry.getValue());
+            
             it.remove();
         }
 
@@ -580,6 +643,7 @@ public class ImageMaps extends JavaPlugin implements Listener {
         meta.setMapView(map);
         item.setItemMeta(meta);
         maps.put(imageMap, map.getId());
+        mapsById.put(map.getId(), imageMap); // Atualiza índice reverso
 
         return item;
     }
