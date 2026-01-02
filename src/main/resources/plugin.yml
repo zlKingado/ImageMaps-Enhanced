@@ -1,0 +1,55 @@
+main: net.craftcitizen.imagemaps.ImageMaps
+author: SydMontague
+version: ${project.version}
+api-version: 1.21
+name: ImageMaps
+commands:
+    imagemap:
+        description: ImageMaps plugin commands, place images on walls
+        permission-message: You do not have permission to use this command.
+        usage: |
+          /imagemap place <filename> [frameVisible] [frameFixed] [frameGlowing] [size] - starts image placement
+          /imagemap download <filename> <sourceURL> - downloads an image
+          /imagemap delete <filename> - deletes an image
+          /imagemap info <filename> - displays image info
+          /imagemap reload <filename> - reloads an image from disk
+          /imagemap reloadconfig [strength] [algorithm] - configures dithering
+          /imagemap algorithms - lists available algorithms
+          /imagemap compare [off] [Algo1 Algo2] - split screen comparison
+          /imagemap list [page] - lists all files in the images folder
+          /imagemap help [command] - shows help
+permissions:
+    imagemaps.*:
+        default: op
+        children:
+          imagemaps.place: true
+          imagemaps.download: true
+          imagemaps.delete: true
+          imagemaps.info: true
+          imagemaps.list: true
+          imagemaps.reload: true
+          imagemaps.help: true
+          imagemaps.toggleFixed: true
+          imagemaps.toggleVisible: true
+    imagemaps.place:
+        default: op
+    imagemaps.download:
+        default: op
+    imagemaps.delete:
+        default: op
+    imagemaps.info:
+        default: op
+    imagemaps.list:
+        default: op
+    imagemaps.reload:
+        default: op
+    imagemaps.help:
+        default: op
+    imagemaps.toggleFixed:
+        default: op
+    imagemaps.toggleVisible:
+        default: op
+    imagemaps.admin:
+        default: op
+        children:
+          imagemaps.*: true

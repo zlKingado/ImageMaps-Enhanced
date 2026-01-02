@@ -1,0 +1,12 @@
+toggleItem: WOODEN_HOE
+
+# Configuração de Suavização (Dithering)
+# Escolha o algoritmo matemático para converter as cores:
+# FLOYD    - Padrão. Bom para fotos realistas, mas gera ruído em cores sólidas.
+# ATKINSON - Recomendado para ANIME/LOGOS. Mantém áreas limpas e alto contraste.
+# BURKES   - Similar ao Floyd, mas ligeiramente mais suave.
+ditherAlgorithm: ATKINSON
+
+# Força do efeito (0.0 a 1.0)
+# 0.6 é o padrão equilibrado. Se usar ATKINSON, pode tentar subir para 0.8 ou 1.0.
+ditherStrength: 0.8
