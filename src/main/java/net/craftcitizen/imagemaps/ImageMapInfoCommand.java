@@ -2,12 +2,12 @@ package net.craftcitizen.imagemaps;
 
 import de.craftlancer.core.Utils;
 import de.craftlancer.core.util.Tuple;
-import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -33,41 +33,54 @@ public class ImageMapInfoCommand extends ImageMapSubCommand {
         }
 
         String filename = args[1];
-        BufferedImage image = getPlugin().getImage(filename);
-
-        if (image == null) {
-            getPlugin().sendMsg(sender, "cmd_no_image_exists");
-            return null;
-        }
-
-        Tuple<Integer, Integer> size = getPlugin().getImageSize(filename, null);
         
-        BaseComponent reloadAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_reload"));
-        reloadAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                                  String.format("/imagemap reload \"%s\"", filename)));
-        
-        BaseComponent placeAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_place"));
-        placeAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                                 String.format("/imagemap place \"%s\"", filename)));
-        
-        BaseComponent deleteAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_delete"));
-        deleteAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                                  String.format("/imagemap delete \"%s\"", filename)));
+        // CORREÇÃO I/O: Processar leitura de imagem assincronamente
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                // Leitura do disco (pode ser lenta)
+                BufferedImage image = getPlugin().getImage(filename);
 
-        BaseComponent actions = new TextComponent(getPlugin().getLang().getRawMessage(sender, "info_actions_label"));
-        actions.addExtra(reloadAction);
-        actions.addExtra(" ");
-        actions.addExtra(placeAction);
-        actions.addExtra(" ");
-        actions.addExtra(deleteAction);
+                // Volta para sync para enviar mensagens e evitar inconsistências com API do Bukkit
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (image == null) {
+                            getPlugin().sendMsg(sender, "cmd_no_image_exists");
+                            return;
+                        }
 
-        getPlugin().sendMsg(sender, "info_header");
-        getPlugin().sendMsg(sender, "info_filename", filename);
-        getPlugin().sendMsg(sender, "info_resolution", image.getWidth(), image.getHeight());
-        getPlugin().sendMsg(sender, "info_ingame_size", size.getKey(), size.getValue());
-        
-        // CORREÇÃO: Usar sender.spigot().sendMessage()
-        sender.spigot().sendMessage(actions);
+                        Tuple<Integer, Integer> size = getPlugin().getImageSize(filename, null);
+                        
+                        BaseComponent reloadAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_reload"));
+                        reloadAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                                                  String.format("/imagemap reload \"%s\"", filename)));
+                        
+                        BaseComponent placeAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_place"));
+                        placeAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                                                 String.format("/imagemap place \"%s\"", filename)));
+                        
+                        BaseComponent deleteAction = new TextComponent(getPlugin().getLang().getRawMessage(sender, "list_action_delete"));
+                        deleteAction.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                                                  String.format("/imagemap delete \"%s\"", filename)));
+
+                        BaseComponent actions = new TextComponent(getPlugin().getLang().getRawMessage(sender, "info_actions_label"));
+                        actions.addExtra(reloadAction);
+                        actions.addExtra(" ");
+                        actions.addExtra(placeAction);
+                        actions.addExtra(" ");
+                        actions.addExtra(deleteAction);
+
+                        getPlugin().sendMsg(sender, "info_header");
+                        getPlugin().sendMsg(sender, "info_filename", filename);
+                        getPlugin().sendMsg(sender, "info_resolution", image.getWidth(), image.getHeight());
+                        getPlugin().sendMsg(sender, "info_ingame_size", size.getKey(), size.getValue());
+                        
+                        sender.spigot().sendMessage(actions);
+                    }
+                }.runTask(getPlugin());
+            }
+        }.runTaskAsynchronously(getPlugin());
         
         return null;
     }

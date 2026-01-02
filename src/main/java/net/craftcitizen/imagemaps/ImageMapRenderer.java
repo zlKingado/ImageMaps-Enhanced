@@ -18,10 +18,11 @@ public class ImageMapRenderer extends MapRenderer {
     private final int y;
     private final double scale;
     
-    // OTIMIZAÇÃO: Cache de pixels processados (Bytes de cor do Minecraft)
+    // Cache de pixels processados (Bytes de cor do Minecraft)
     private byte[] cachedPixels = null;
     private boolean needsUpdate = true;
     
+    // Largura total usada para cálculos de alinhamento no modo debug
     private int totalImageWidth = 0;
 
     public ImageMapRenderer(ImageMaps plugin, BufferedImage image, int x, int y, double scale) {
@@ -33,15 +34,48 @@ public class ImageMapRenderer extends MapRenderer {
         recalculateInput(image);
     }
 
+    /**
+     * Recalcula a imagem na Thread Principal (Método Legado/Síncrono).
+     * Evite usar isso em loops grandes. Prefira calculatePixels() async e setPixels().
+     */
     public void recalculateInput(BufferedImage input) {
         if (input == null) return;
+        
+        // Pega as configurações atuais do plugin
+        String algo = plugin.getDitherAlgorithm();
+        float strength = plugin.getDitherStrength();
+        boolean isComparing = plugin.isComparing();
+        String leftAlgo = plugin.getCompareLeft();
+        String rightAlgo = plugin.getCompareRight();
 
-        this.totalImageWidth = (int) Math.round(input.getWidth() * scale);
+        // Calcula
+        this.cachedPixels = calculatePixels(input, x, y, scale, algo, strength, isComparing, leftAlgo, rightAlgo);
+        this.needsUpdate = true;
+    }
+
+    /**
+     * Define os pixels diretamente. Útil quando o cálculo foi feito assincronamente.
+     */
+    public void setPixels(byte[] pixels) {
+        this.cachedPixels = pixels;
+        this.needsUpdate = true;
+    }
+
+    /**
+     * Método ESTÁTICO e thread-safe para calcular os pixels.
+     * Pode ser chamado via runTaskAsynchronously sem medo.
+     */
+    public static byte[] calculatePixels(BufferedImage input, int x, int y, double scale, 
+                                         String algorithm, float strength, 
+                                         boolean comparing, String leftAlgo, String rightAlgo) {
+        if (input == null) return null;
+
+        int totalImageWidth = (int) Math.round(input.getWidth() * scale);
 
         int startX = (int) Math.floor(x * ImageMaps.MAP_WIDTH / scale);
         int startY = (int) Math.floor(y * ImageMaps.MAP_HEIGHT / scale);
 
-        if (startX >= input.getWidth() || startY >= input.getHeight()) return;
+        if (startX >= input.getWidth() || startY >= input.getHeight()) return null;
 
         int endX = (int) Math.ceil(Math.min(input.getWidth(), ((x + 1) * ImageMaps.MAP_WIDTH / scale)));
         int endY = (int) Math.ceil(Math.min(input.getHeight(), ((y + 1) * ImageMaps.MAP_HEIGHT / scale)));
@@ -49,7 +83,7 @@ public class ImageMapRenderer extends MapRenderer {
         int subWidth = endX - startX;
         int subHeight = endY - startY;
 
-        if (subWidth <= 0 || subHeight <= 0) return;
+        if (subWidth <= 0 || subHeight <= 0) return null;
 
         BufferedImage subImage = input.getSubimage(startX, startY, subWidth, subHeight);
 
@@ -63,12 +97,7 @@ public class ImageMapRenderer extends MapRenderer {
             finalImage = scaleOp.filter(subImage, resized);
         }
 
-        // Limpa cache anterior explicitamente
-        this.cachedPixels = null;
-        // Gera novos pixels
-        this.cachedPixels = ditherImage(finalImage);
-        // Marca para renderização
-        this.needsUpdate = true;
+        return ditherImage(finalImage, x, totalImageWidth, algorithm, strength, comparing, leftAlgo, rightAlgo);
     }
 
     public void refresh() {
@@ -77,7 +106,6 @@ public class ImageMapRenderer extends MapRenderer {
 
     @Override
     public void render(MapView view, MapCanvas canvas, Player player) {
-        // Só desenha se houver dados E se precisar de atualização (economiza CPU)
         if (cachedPixels != null && needsUpdate) {
             for (int i = 0; i < cachedPixels.length; i++) {
                 int px = i % ImageMaps.MAP_WIDTH;
@@ -88,7 +116,12 @@ public class ImageMapRenderer extends MapRenderer {
         }
     }
 
-    private byte[] ditherImage(BufferedImage img) {
+    /**
+     * Lógica matemática de Dithering isolada.
+     */
+    private static byte[] ditherImage(BufferedImage img, int mapX, int totalWidth, 
+                                      String defaultAlgo, float defaultStrength,
+                                      boolean debugging, String leftAlgo, String rightAlgo) {
         int width = img.getWidth();
         int height = img.getHeight();
         byte[] pixels = new byte[ImageMaps.MAP_WIDTH * ImageMaps.MAP_HEIGHT];
@@ -96,8 +129,7 @@ public class ImageMapRenderer extends MapRenderer {
         Arrays.fill(pixels, (byte) 0);
 
         float[][][] buffer = new float[width][height][3];
-        boolean debugging = plugin.isComparing();
-        int globalSplitX = totalImageWidth / 2;
+        int globalSplitX = totalWidth / 2;
 
         for (int i = 0; i < width; i++) {
             for (int j = 0; j < height; j++) {
@@ -112,16 +144,15 @@ public class ImageMapRenderer extends MapRenderer {
             for (int i = 0; i < width; i++) {
                 if (i >= ImageMaps.MAP_WIDTH || j >= ImageMaps.MAP_HEIGHT) continue;
 
-                int globalX = (this.x * ImageMaps.MAP_WIDTH) + i;
+                int globalX = (mapX * ImageMaps.MAP_WIDTH) + i;
 
                 if (debugging && globalX == globalSplitX) {
-                    // Linha preta divisória no modo debug
+                    // Linha divisória
                     int arrayIndex = j * ImageMaps.MAP_WIDTH + i;
                     pixels[arrayIndex] = (byte) 119; 
                     continue;
                 }
 
-                // Pega cor do buffer (que pode ter erro acumulado de pixels anteriores)
                 int oldR = clamp(Math.round(buffer[i][j][0]));
                 int oldG = clamp(Math.round(buffer[i][j][1]));
                 int oldB = clamp(Math.round(buffer[i][j][2]));
@@ -136,18 +167,16 @@ public class ImageMapRenderer extends MapRenderer {
                     continue;
                 }
 
-                // Encontra a cor mais próxima na paleta do Minecraft
                 @SuppressWarnings("deprecation")
                 byte index = MapPalette.matchColor(oldR, oldG, oldB);
                 
                 pixels[arrayIndex] = index;
 
-                // Define qual algoritmo usar neste pixel
                 String activeAlgo;
-                float activeStrength;
+                float activeStrength = defaultStrength;
                 
                 if (debugging) {
-                    String selection = (globalX < globalSplitX) ? plugin.getCompareLeft() : plugin.getCompareRight();
+                    String selection = (globalX < globalSplitX) ? leftAlgo : rightAlgo;
                     
                     if (selection.equals("NONE")) {
                          pixels[arrayIndex] = (byte) 0;
@@ -155,23 +184,18 @@ public class ImageMapRenderer extends MapRenderer {
                     }
                     
                     if (selection.equals("CURRENT")) {
-                        activeAlgo = plugin.getDitherAlgorithm();
-                        activeStrength = plugin.getDitherStrength();
+                        activeAlgo = defaultAlgo;
                     } else {
                         activeAlgo = selection;
-                        activeStrength = plugin.getDitherStrength();
                     }
                 } else {
-                    activeAlgo = plugin.getDitherAlgorithm();
-                    activeStrength = plugin.getDitherStrength();
+                    activeAlgo = defaultAlgo;
                 }
 
-                // Se for RAW, paramos aqui! Não calcula erro nem distribui.
                 if (activeAlgo.equals("RAW")) {
                     continue;
                 }
 
-                // Calcula erro de quantização (diferença entre cor original e cor da paleta)
                 Color paletteColor = MapPalette.getColor(index);
                 int newR = paletteColor.getRed();
                 int newG = paletteColor.getGreen();
@@ -181,7 +205,6 @@ public class ImageMapRenderer extends MapRenderer {
                 float errG = (oldG - newG) * activeStrength;
                 float errB = (oldB - newB) * activeStrength;
 
-                // Distribui o erro para vizinhos
                 switch (activeAlgo) {
                     case "ATKINSON":
                         distribute(buffer, i + 1, j, errR, errG, errB, 1.0f/8.0f, width, height);
@@ -218,7 +241,7 @@ public class ImageMapRenderer extends MapRenderer {
         return pixels;
     }
 
-    private void distribute(float[][][] buffer, int x, int y, float errR, float errG, float errB, float factor, int width, int height) {
+    private static void distribute(float[][][] buffer, int x, int y, float errR, float errG, float errB, float factor, int width, int height) {
         if (x >= 0 && x < width && y >= 0 && y < height) {
             buffer[x][y][0] += errR * factor;
             buffer[x][y][1] += errG * factor;
@@ -226,7 +249,7 @@ public class ImageMapRenderer extends MapRenderer {
         }
     }
 
-    private int clamp(int val) {
+    private static int clamp(int val) {
         return Math.max(0, Math.min(255, val));
     }
 }

@@ -53,24 +53,20 @@ public class ImageMaps extends JavaPlugin implements Listener {
 
     private Map<String, BufferedImage> imageCache = new HashMap<>();
     private Map<ImageMap, Integer> maps = new HashMap<>();
-    // OTIMIZAÇÃO: Índice reverso para lookup rápido em comandos como 'swap'
     private Map<Integer, ImageMap> mapsById = new HashMap<>();
 
     private Material toggleItem;
     private float ditherStrength;
     private String ditherAlgorithm;
     
-    // Configurações Padrão
     private boolean defaultGlowing;
     private boolean defaultInvisible;
     private boolean defaultFixed;
     
-    // Variáveis para o Modo Comparação
     private boolean comparing = false;
     private String compareLeft = "NONE";
     private String compareRight = "CURRENT";
     
-    // Gerenciador de Idiomas
     private LanguageManager languageManager;
 
     static {
@@ -90,7 +86,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
         getCommand("imagemap").setExecutor(new ImageMapCommandHandler(this));
         getServer().getPluginManager().registerEvents(this, this);
 
-        loadMaps();
+        // Substitui o loadMaps simples pelo Validador Automático
+        validateAndLoadMaps();
 
         new LambdaRunnable(this::saveMaps).runTaskTimer(this, AUTOSAVE_PERIOD, AUTOSAVE_PERIOD);
     }
@@ -112,13 +109,11 @@ public class ImageMaps extends JavaPlugin implements Listener {
         ditherStrength = (float) getConfig().getDouble("ditherStrength", 0.6);
         ditherAlgorithm = getConfig().getString("ditherAlgorithm", "FLOYD").toUpperCase();
         
-        // Carrega os novos padrões
         defaultGlowing = getConfig().getBoolean("defaultPlacement.glowing", false);
         defaultInvisible = getConfig().getBoolean("defaultPlacement.invisible", false);
         defaultFixed = getConfig().getBoolean("defaultPlacement.fixed", false);
     }
     
-    // Getters para os novos padrões
     public boolean isDefaultGlowing() { return defaultGlowing; }
     public boolean isDefaultInvisible() { return defaultInvisible; }
     public boolean isDefaultFixed() { return defaultFixed; }
@@ -144,17 +139,14 @@ public class ImageMaps extends JavaPlugin implements Listener {
         } else {
             reloadConfig();
             loadConfigValues();
-            languageManager.loadLocales(); // Recarrega idiomas também
+            languageManager.loadLocales();
             sendMsg(sender, "cmd_config_reloaded", ditherStrength, ditherAlgorithm);
         }
         
-        // CORREÇÃO LAG: Processamento Assíncrono
         new BukkitRunnable() {
             @Override
             public void run() {
                 refreshAllMaps();
-                
-                // Opcional: Avisar no console quando terminar
                 new BukkitRunnable() {
                     @Override
                     public void run() {
@@ -172,7 +164,6 @@ public class ImageMaps extends JavaPlugin implements Listener {
         this.compareLeft = left;
         this.compareRight = right;
         
-        // CORREÇÃO LAG: Processamento Assíncrono também na comparação
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -186,9 +177,13 @@ public class ImageMaps extends JavaPlugin implements Listener {
     public String getCompareRight() { return compareRight; }
 
     private void refreshAllMaps() {
-        // Copia os IDs para evitar ConcurrentModificationException
         Integer[] mapIds = maps.values().toArray(new Integer[0]);
-        
+        String currentAlgo = getDitherAlgorithm();
+        float currentStrength = getDitherStrength();
+        boolean isComp = isComparing();
+        String left = getCompareLeft();
+        String right = getCompareRight();
+
         for (Integer id : mapIds) {
             ImageMap imgMap = mapsById.get(id);
             if (imgMap == null) continue;
@@ -196,24 +191,21 @@ public class ImageMaps extends JavaPlugin implements Listener {
             BufferedImage image = getImage(imgMap.getFilename());
             if (image == null) continue;
 
-            // Como MapView e seus renderizadores não são Thread-Safe, 
-            // precisamos agendar a atualização de cada mapa na thread principal
-            // MAS o cálculo pesado já foi feito se movermos a lógica certa.
-            // No caso atual, ImageMapRenderer faz tudo no recalculateInput.
-            // Então vamos fazer um truque: vamos calcular numa thread separada e injetar.
+            byte[] pixels = ImageMapRenderer.calculatePixels(
+                image, imgMap.getX(), imgMap.getY(), imgMap.getScale(), 
+                currentAlgo, currentStrength, isComp, left, right
+            );
             
-            // ATENÇÃO: Bukkit.getMap DEVE rodar na thread principal ou ser sincronizado.
-            // Para não travar, vamos agendar pequenas tarefas.
-            
+            if (pixels == null) continue;
+
              new BukkitRunnable() {
                 @Override
                 public void run() {
-                    @SuppressWarnings("deprecation")
-                    MapView map = Bukkit.getMap(id);
+                    MapView map = getMapView(id);
                     if (map != null) {
                         for (MapRenderer r : map.getRenderers()) {
                             if (r instanceof ImageMapRenderer) {
-                                ((ImageMapRenderer) r).recalculateInput(image);
+                                ((ImageMapRenderer) r).setPixels(pixels);
                             }
                         }
                     }
@@ -227,18 +219,12 @@ public class ImageMaps extends JavaPlugin implements Listener {
         saveMaps();
     }
     
-    public float getDitherStrength() {
-        return ditherStrength;
-    }
-    
-    public String getDitherAlgorithm() {
-        return ditherAlgorithm;
-    }
+    public float getDitherStrength() { return ditherStrength; }
+    public String getDitherAlgorithm() { return ditherAlgorithm; }
 
     @EventHandler(ignoreCancelled = true)
     public void onToggleFrameProperty(PlayerInteractEntityEvent event) {
-        if (!isInvisibilitySupported())
-            return;
+        if (!isInvisibilitySupported()) return;
 
         if (event.getRightClicked().getType() != EntityType.ITEM_FRAME
             && (!isGlowingSupported() || event.getRightClicked().getType() != EntityType.GLOW_ITEM_FRAME))
@@ -279,16 +265,13 @@ public class ImageMaps extends JavaPlugin implements Listener {
     public boolean isUpDownFaceSupported() {
         SemanticVersion version = Utils.getMCVersion();
 
-        if (version.getMajor() < 1)
-            return false;
-        if (version.getMajor() == 1 && version.getMinor() == 14 && version.getRevision() >= 4)
-            return true;
+        if (version.getMajor() < 1) return false;
+        if (version.getMajor() == 1 && version.getMinor() == 14 && version.getRevision() >= 4) return true;
         return version.getMinor() > 14;
     }
 
     public boolean isSetTrackingSupported() {
         SemanticVersion version = Utils.getMCVersion();
-
         return version.getMajor() >= 1 && version.getMinor() >= 14;
     }
 
@@ -311,93 +294,119 @@ public class ImageMaps extends JavaPlugin implements Listener {
             }
         });
 
-        if (isEnabled())
-            saveTask.runTaskAsynchronously(this);
-        else
-            saveTask.run();
+        if (isEnabled()) saveTask.runTaskAsynchronously(this);
+        else saveTask.run();
     }
 
-    private void loadMaps() {
+    /**
+     * NOVO: Validador e Carregador Automático
+     * Verifica se os mapas no arquivo de configuração realmente existem no servidor.
+     * Se não existirem, são removidos automaticamente para manter a integridade.
+     */
+    private void validateAndLoadMaps() {
         File configFile = new File(getDataFolder(), MAPS_YML);
-        
-        // Limpa o mapa reverso ao recarregar
         mapsById.clear();
+        maps.clear();
 
-        if (!configFile.exists())
-            return;
+        if (!configFile.exists()) return;
 
         Configuration config = YamlConfiguration.loadConfiguration(configFile);
         int version = config.getInt(CONFIG_VERSION_KEY, -1);
 
-        if (version == -1)
-            config = convertLegacyMaps(config);
+        if (version == -1) config = convertLegacyMaps(config);
 
         ConfigurationSection section = config.getConfigurationSection("maps");
-        if (section != null)
-            section.getValues(false).forEach((a, b) -> {
-                int id = Integer.parseInt(a);
-                ImageMap imageMap = (ImageMap) b;
-                @SuppressWarnings("deprecation")
-                MapView map = Bukkit.getMap(id);
-                BufferedImage image = getImage(imageMap.getFilename());
-                maps.put(imageMap, id);
-                // Popula o mapa reverso (Otimização)
-                mapsById.put(id, imageMap);
+        if (section == null) return;
 
-                if (image == null) {
-                    getLogger().warning(() -> "Image file " + imageMap.getFilename() + " not found!");
-                    return;
-                }
-                if (map == null) {
-                    getLogger().warning(() -> "Map " + id + " referenced but does not exist!");
-                    return;
-                }
+        boolean dirty = false;
+        int removedCount = 0;
 
-                if (isSetTrackingSupported())
-                    map.setTrackingPosition(false);
-                map.getRenderers().forEach(map::removeRenderer);
-                map.addRenderer(new ImageMapRenderer(this, image, imageMap.getX(), imageMap.getY(),
-                                                     imageMap.getScale()));
-            });
+        for (String key : section.getKeys(false)) {
+            int id;
+            try {
+                id = Integer.parseInt(key);
+            } catch (NumberFormatException e) {
+                continue;
+            }
+
+            ImageMap imageMap = (ImageMap) section.get(key);
+            
+            // Validação 1: O MapView existe no servidor?
+            MapView map = getMapView(id);
+            if (map == null) {
+                getLogger().warning("Map ID " + id + " (Image: " + imageMap.getFilename() + ") not found in server data. Removing invalid reference.");
+                dirty = true;
+                removedCount++;
+                continue; // Pula este mapa, não carrega na memória
+            }
+
+            // Validação 2: A imagem existe no disco?
+            BufferedImage image = getImage(imageMap.getFilename());
+            if (image == null) {
+                getLogger().warning("Image file " + imageMap.getFilename() + " not found for Map ID " + id + ". Keeping entry but skipping render.");
+                // Aqui não removemos, pois o usuário pode ter deletado a imagem sem querer e pode restaurá-la.
+                continue; 
+            }
+
+            // Se tudo válido, carrega
+            maps.put(imageMap, id);
+            mapsById.put(id, imageMap);
+
+            if (isSetTrackingSupported()) map.setTrackingPosition(false);
+            map.getRenderers().forEach(map::removeRenderer);
+            map.addRenderer(new ImageMapRenderer(this, image, imageMap.getX(), imageMap.getY(), imageMap.getScale()));
+        }
+
+        // Se houve limpeza, salva o arquivo limpo
+        if (dirty) {
+            getLogger().info("Validator: Removed " + removedCount + " invalid map references. Saving clean config...");
+            backupMapsConfig(); // Cria backup antes de salvar
+            saveMaps(); // Salva a versão limpa
+        }
     }
     
-    // Método auxiliar para obter ImageMap pelo ID de forma rápida
+    // Método auxiliar para backup de segurança
+    private void backupMapsConfig() {
+        try {
+            File source = new File(getDataFolder(), MAPS_YML);
+            File dest = new File(getDataFolder(), MAPS_YML + ".backup_" + System.currentTimeMillis());
+            Files.copy(source, dest);
+            getLogger().info("Backup created: " + dest.getName());
+        } catch (IOException e) {
+            getLogger().severe("Failed to create backup!");
+            e.printStackTrace();
+        }
+    }
+
     public ImageMap getMapById(int id) {
         return mapsById.get(id);
     }
 
     public int cleanupMaps() {
         int start = maps.size();
-
         maps.entrySet().removeIf(a -> {
-            @SuppressWarnings("deprecation")
-            MapView map = Bukkit.getMap(a.getValue().intValue());
+            MapView map = getMapView(a.getValue());
             BufferedImage image = getImage(a.getKey().getFilename());
-            
             boolean invalid = map == null || image == null;
-            if (invalid) {
-                // Remove do reverso também
-                mapsById.remove(a.getValue());
-            }
+            if (invalid) mapsById.remove(a.getValue());
             return invalid;
         });
-
         return start - maps.size();
+    }
+
+    /**
+     * Wrapper seguro para obter MapView, lidando com a depreciação do Bukkit.getMap(int)
+     */
+    @SuppressWarnings("deprecation")
+    private MapView getMapView(int id) {
+        return Bukkit.getMap(id);
     }
 
     private Configuration convertLegacyMaps(Configuration config) {
         getLogger().info("Converting maps from Version <1.0");
-
-        try {
-            Files.copy(new File(getDataFolder(), MAPS_YML), new File(getDataFolder(), MAPS_YML + ".backup"));
-        }
-        catch (IOException e) {
-            getLogger().severe("Failed to backup maps.yml!");
-            e.printStackTrace();
-        }
+        backupMapsConfig(); // Backup antes de converter
 
         Map<Integer, ImageMap> map = new HashMap<>();
-
         for (String key : config.getKeys(false)) {
             int id = Integer.parseInt(key);
             String image = config.getString(key + ".image");
@@ -414,11 +423,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
     }
 
     public boolean hasImage(String filename) {
-        if (imageCache.containsKey(filename.toLowerCase()))
-            return true;
-
+        if (imageCache.containsKey(filename.toLowerCase())) return true;
         File file = new File(getDataFolder(), IMAGES_DIR + File.separatorChar + filename);
-
         return file.exists() && getImage(filename) != null;
     }
 
@@ -434,14 +440,12 @@ public class ImageMaps extends JavaPlugin implements Listener {
         File file = new File(getDataFolder(), IMAGES_DIR + File.separatorChar + filename);
         BufferedImage image = null;
 
-        if (!file.exists())
-            return null;
+        if (!file.exists()) return null;
 
         try {
             image = ImageIO.read(file);
             imageCache.put(filename.toLowerCase(), image);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             getLogger().log(Level.SEVERE, String.format("Error while trying to read image %s.", file.getName()), e);
         }
 
@@ -454,9 +458,7 @@ public class ImageMaps extends JavaPlugin implements Listener {
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
-
-        if (!player.hasMetadata(PLACEMENT_METADATA))
-            return;
+        if (!player.hasMetadata(PLACEMENT_METADATA)) return;
 
         if (event.getAction() == Action.RIGHT_CLICK_AIR) {
             player.removeMetadata(PLACEMENT_METADATA, this);
@@ -464,33 +466,19 @@ public class ImageMaps extends JavaPlugin implements Listener {
             return;
         }
 
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK)
-            return;
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
 
         PlacementData data = (PlacementData) player.getMetadata(PLACEMENT_METADATA).get(0).value();
         PlacementResult result = placeImage(player, event.getClickedBlock(), event.getBlockFace(), data);
 
         switch (result) {
-            case INVALID_FACING:
-                sendMsg(player, "error_invalid_facing");
-                break;
-            case INVALID_DIRECTION:
-                sendMsg(player, "error_invalid_direction");
-                break;
-            case EVENT_CANCELLED:
-                sendMsg(player, "action_cancelled_plugin");
-                break;
-            case INSUFFICIENT_SPACE:
-                sendMsg(player, "error_insufficient_space");
-                break;
-            case INSUFFICIENT_WALL:
-                sendMsg(player, "error_insufficient_wall");
-                break;
-            case OVERLAPPING_ENTITY:
-                sendMsg(player, "error_overlapping");
-                break;
-            case SUCCESS:
-                break;
+            case INVALID_FACING: sendMsg(player, "error_invalid_facing"); break;
+            case INVALID_DIRECTION: sendMsg(player, "error_invalid_direction"); break;
+            case EVENT_CANCELLED: sendMsg(player, "action_cancelled_plugin"); break;
+            case INSUFFICIENT_SPACE: sendMsg(player, "error_insufficient_space"); break;
+            case INSUFFICIENT_WALL: sendMsg(player, "error_insufficient_wall"); break;
+            case OVERLAPPING_ENTITY: sendMsg(player, "error_overlapping"); break;
+            case SUCCESS: break;
         }
 
         player.removeMetadata(PLACEMENT_METADATA, this);
@@ -503,8 +491,7 @@ public class ImageMaps extends JavaPlugin implements Listener {
             return PlacementResult.INVALID_FACING;
         }
 
-        if (face.getModY() != 0 && !isUpDownFaceSupported())
-            return PlacementResult.INVALID_FACING;
+        if (face.getModY() != 0 && !isUpDownFaceSupported()) return PlacementResult.INVALID_FACING;
 
         Block b = block.getRelative(face);
         BufferedImage image = getImage(data.getFilename());
@@ -512,38 +499,26 @@ public class ImageMaps extends JavaPlugin implements Listener {
         BlockFace widthDirection = calculateWidthDirection(player, face);
         BlockFace heightDirection = calculateHeightDirection(player, face);
 
-        if (widthDirection == null || heightDirection == null)
-            return PlacementResult.INVALID_DIRECTION;
+        if (widthDirection == null || heightDirection == null) return PlacementResult.INVALID_DIRECTION;
 
-        // check for space
         for (int x = 0; x < size.getKey(); x++)
             for (int y = 0; y < size.getValue(); y++) {
                 Block frameBlock = b.getRelative(widthDirection, x).getRelative(heightDirection, y);
-
                 if (!block.getRelative(widthDirection, x).getRelative(heightDirection, y).getType().isSolid())
                     return PlacementResult.INSUFFICIENT_WALL;
-                if (frameBlock.getType().isSolid())
-                    return PlacementResult.INSUFFICIENT_SPACE;
-                if (!b.getWorld().getNearbyEntities(frameBlock.getLocation().add(0.5, 0.5, 0.5), 0.5, 0.5, 0.5,
-                                                    Hanging.class::isInstance)
-                      .isEmpty())
+                if (frameBlock.getType().isSolid()) return PlacementResult.INSUFFICIENT_SPACE;
+                if (!b.getWorld().getNearbyEntities(frameBlock.getLocation().add(0.5, 0.5, 0.5), 0.5, 0.5, 0.5, Hanging.class::isInstance).isEmpty())
                     return PlacementResult.OVERLAPPING_ENTITY;
             }
 
-        ImagePlaceEvent event = new ImagePlaceEvent(player, block, widthDirection, heightDirection, size.getKey(),
-                                                    size.getValue(), data);
+        ImagePlaceEvent event = new ImagePlaceEvent(player, block, widthDirection, heightDirection, size.getKey(), size.getValue(), data);
         Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled())
-            return PlacementResult.EVENT_CANCELLED;
+        if (event.isCancelled()) return PlacementResult.EVENT_CANCELLED;
 
-        // spawn item frame
         for (int x = 0; x < size.getKey(); x++)
             for (int y = 0; y < size.getValue(); y++) {
                 Class<? extends ItemFrame> itemFrameClass = data.isGlowing() ? GlowItemFrame.class : ItemFrame.class;
-                ItemFrame frame = block.getWorld().spawn(
-                                                         b.getRelative(widthDirection, x)
-                                                          .getRelative(heightDirection, y).getLocation(),
-                                                         itemFrameClass);
+                ItemFrame frame = block.getWorld().spawn(b.getRelative(widthDirection, x).getRelative(heightDirection, y).getLocation(), itemFrameClass);
                 frame.setFacingDirection(face);
                 frame.setItem(getMapItem(image, x, y, data));
                 frame.setRotation(facingToRotation(heightDirection, widthDirection));
@@ -553,54 +528,35 @@ public class ImageMaps extends JavaPlugin implements Listener {
                     frame.setVisible(!data.isInvisible());
                 }
             }
-
         return PlacementResult.SUCCESS;
     }
 
     public boolean deleteImage(String filename) {
         File file = new File(getDataFolder(), IMAGES_DIR + File.separatorChar + filename);
-
         boolean fileDeleted = false;
-        if (file.exists()) {
-            fileDeleted = file.delete();
-        }
-
+        if (file.exists()) fileDeleted = file.delete();
         imageCache.remove(filename.toLowerCase());
 
         Iterator<Entry<ImageMap, Integer>> it = maps.entrySet().iterator();
         while (it.hasNext()) {
             Entry<ImageMap, Integer> entry = it.next();
             ImageMap imageMap = entry.getKey();
-            if (!imageMap.getFilename().equalsIgnoreCase(filename)) {
-                continue;
-            }
+            if (!imageMap.getFilename().equalsIgnoreCase(filename)) continue;
 
-            @SuppressWarnings("deprecation")
-            MapView map = Bukkit.getMap(entry.getValue());
-
-            if (map == null) {
-                continue;
-            }
+            MapView map = getMapView(entry.getValue());
+            if (map == null) continue;
             map.getRenderers().forEach(map::removeRenderer);
-            
-            // Remove do reverso também
             mapsById.remove(entry.getValue());
-            
             it.remove();
         }
-
         saveMaps();
         return fileDeleted;
     }
 
-    @SuppressWarnings("deprecation")
     public boolean reloadImage(String filename) {
-        if (!imageCache.containsKey(filename.toLowerCase()))
-            return false;
-
+        if (!imageCache.containsKey(filename.toLowerCase())) return false;
         imageCache.remove(filename.toLowerCase());
         BufferedImage image = getImage(filename);
-
         if (image == null) {
             getLogger().warning(() -> "Failed to reload image: " + filename);
             return false;
@@ -608,10 +564,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
         
         for (Entry<ImageMap, Integer> entry : maps.entrySet()) {
             if (!entry.getKey().getFilename().equalsIgnoreCase(filename)) continue;
-            
-            MapView map = Bukkit.getMap(entry.getValue());
+            MapView map = getMapView(entry.getValue());
             if (map == null) continue;
-            
             for (MapRenderer renderer : map.getRenderers()) {
                 if (renderer instanceof ImageMapRenderer) {
                     ((ImageMapRenderer) renderer).recalculateInput(image);
@@ -621,10 +575,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
         return true;
     }
 
-    @SuppressWarnings("deprecation")
     private ItemStack getMapItem(BufferedImage image, int x, int y, PlacementData data) {
         ItemStack item = new ItemStack(Material.FILLED_MAP);
-
         ImageMap imageMap = new ImageMap(data.getFilename(), x, y, getScale(image, data.getSize()));
         if (maps.containsKey(imageMap)) {
             MapMeta meta = (MapMeta) item.getItemMeta();
@@ -636,28 +588,23 @@ public class ImageMaps extends JavaPlugin implements Listener {
         MapView map = getServer().createMap(getServer().getWorlds().get(0));
         map.getRenderers().forEach(map::removeRenderer);
         map.addRenderer(new ImageMapRenderer(this, image, x, y, getScale(image, data.getSize())));
-        if (isSetTrackingSupported())
-            map.setTrackingPosition(false);
+        if (isSetTrackingSupported()) map.setTrackingPosition(false);
 
         MapMeta meta = ((MapMeta) item.getItemMeta());
         meta.setMapView(map);
         item.setItemMeta(meta);
         maps.put(imageMap, map.getId());
-        mapsById.put(map.getId(), imageMap); // Atualiza índice reverso
-
+        mapsById.put(map.getId(), imageMap);
         return item;
     }
 
     public Tuple<Integer, Integer> getImageSize(String filename, Tuple<Integer, Integer> size) {
         BufferedImage image = getImage(filename);
-
-        if (image == null)
-            return new Tuple<>(0, 0);
+        if (image == null) return new Tuple<>(0, 0);
 
         double finalScale = getScale(image, size);
         int finalX = (int) ((MAP_WIDTH - 1 + Math.ceil(image.getWidth() * finalScale)) / MAP_WIDTH);
         int finalY = (int) ((MAP_HEIGHT - 1 + Math.ceil(image.getHeight() * finalScale)) / MAP_HEIGHT);
-
         return new Tuple<>(finalX, finalY);
     }
 
@@ -666,67 +613,46 @@ public class ImageMaps extends JavaPlugin implements Listener {
     }
 
     public double getScale(BufferedImage image, Tuple<Integer, Integer> size) {
-        if (image == null)
-            return 1.0;
-
+        if (image == null) return 1.0;
         int baseX = image.getWidth();
         int baseY = image.getHeight();
-
         double finalScale = 1D;
 
         if (size != null) {
             int targetX = size.getKey() * MAP_WIDTH;
             int targetY = size.getValue() * MAP_HEIGHT;
-
             double scaleX = size.getKey() > 0 ? (double) targetX / baseX : Double.MAX_VALUE;
             double scaleY = size.getValue() > 0 ? (double) targetY / baseY : Double.MAX_VALUE;
-
             finalScale = Math.min(scaleX, scaleY);
-            if (finalScale >= Double.MAX_VALUE)
-                finalScale = 1D;
+            if (finalScale >= Double.MAX_VALUE) finalScale = 1D;
         }
-
         return finalScale;
     }
 
     private static Rotation facingToRotation(BlockFace heightDirection, BlockFace widthDirection) {
         switch (heightDirection) {
-            case WEST:
-                return Rotation.CLOCKWISE_45;
-            case NORTH:
-                return widthDirection == BlockFace.WEST ? Rotation.CLOCKWISE : Rotation.NONE;
-            case EAST:
-                return Rotation.CLOCKWISE_135;
-            case SOUTH:
-                return widthDirection == BlockFace.WEST ? Rotation.CLOCKWISE : Rotation.NONE;
-            default:
-                return Rotation.NONE;
+            case WEST: return Rotation.CLOCKWISE_45;
+            case NORTH: return widthDirection == BlockFace.WEST ? Rotation.CLOCKWISE : Rotation.NONE;
+            case EAST: return Rotation.CLOCKWISE_135;
+            case SOUTH: return widthDirection == BlockFace.WEST ? Rotation.CLOCKWISE : Rotation.NONE;
+            default: return Rotation.NONE;
         }
     }
 
     private static BlockFace calculateWidthDirection(Player player, BlockFace face) {
         float yaw = (360.0f + player.getLocation().getYaw()) % 360.0f;
         switch (face) {
-            case NORTH:
-                return BlockFace.WEST;
-            case SOUTH:
-                return BlockFace.EAST;
-            case EAST:
-                return BlockFace.NORTH;
-            case WEST:
-                return BlockFace.SOUTH;
+            case NORTH: return BlockFace.WEST;
+            case SOUTH: return BlockFace.EAST;
+            case EAST: return BlockFace.NORTH;
+            case WEST: return BlockFace.SOUTH;
             case UP:
             case DOWN:
-                if (Utils.isBetween(yaw, 45.0, 135.0))
-                    return BlockFace.NORTH;
-                else if (Utils.isBetween(yaw, 135.0, 225.0))
-                    return BlockFace.EAST;
-                else if (Utils.isBetween(yaw, 225.0, 315.0))
-                    return BlockFace.SOUTH;
-                else
-                    return BlockFace.WEST;
-            default:
-                return null;
+                if (Utils.isBetween(yaw, 45.0, 135.0)) return BlockFace.NORTH;
+                else if (Utils.isBetween(yaw, 135.0, 225.0)) return BlockFace.EAST;
+                else if (Utils.isBetween(yaw, 225.0, 315.0)) return BlockFace.SOUTH;
+                else return BlockFace.WEST;
+            default: return null;
         }
     }
 
@@ -736,28 +662,18 @@ public class ImageMaps extends JavaPlugin implements Listener {
             case NORTH:
             case SOUTH:
             case EAST:
-            case WEST:
-                return BlockFace.DOWN;
+            case WEST: return BlockFace.DOWN;
             case UP:
-                if (Utils.isBetween(yaw, 45.0, 135.0))
-                    return BlockFace.EAST;
-                else if (Utils.isBetween(yaw, 135.0, 225.0))
-                    return BlockFace.SOUTH;
-                else if (Utils.isBetween(yaw, 225.0, 315.0))
-                    return BlockFace.WEST;
-                else
-                    return BlockFace.NORTH;
+                if (Utils.isBetween(yaw, 45.0, 135.0)) return BlockFace.EAST;
+                else if (Utils.isBetween(yaw, 135.0, 225.0)) return BlockFace.SOUTH;
+                else if (Utils.isBetween(yaw, 225.0, 315.0)) return BlockFace.WEST;
+                else return BlockFace.NORTH;
             case DOWN:
-                if (Utils.isBetween(yaw, 45.0, 135.0))
-                    return BlockFace.WEST;
-                else if (Utils.isBetween(yaw, 135.0, 225.0))
-                    return BlockFace.NORTH;
-                else if (Utils.isBetween(yaw, 225.0, 315.0))
-                    return BlockFace.EAST;
-                else
-                    return BlockFace.SOUTH;
-            default:
-                return null;
+                if (Utils.isBetween(yaw, 45.0, 135.0)) return BlockFace.WEST;
+                else if (Utils.isBetween(yaw, 135.0, 225.0)) return BlockFace.NORTH;
+                else if (Utils.isBetween(yaw, 225.0, 315.0)) return BlockFace.EAST;
+                else return BlockFace.SOUTH;
+            default: return null;
         }
     }
 
@@ -768,10 +684,8 @@ public class ImageMaps extends JavaPlugin implements Listener {
             case WEST:
             case EAST:
             case SOUTH:
-            case NORTH:
-                return true;
-            default:
-                return false;
+            case NORTH: return true;
+            default: return false;
         }
     }
 }
