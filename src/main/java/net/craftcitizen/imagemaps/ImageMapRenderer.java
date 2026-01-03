@@ -35,7 +35,6 @@ public class ImageMapRenderer extends MapRenderer {
 
     static {
         // Inicialização Dinâmica: Escaneia a API do Bukkit para descobrir todas as cores suportadas.
-        // Isso garante que se o Minecraft atualizar e adicionar novas cores, o plugin suportará automaticamente.
         try {
             for (int i = 0; i < 256; i++) {
                 try {
@@ -62,7 +61,10 @@ public class ImageMapRenderer extends MapRenderer {
     }
 
     public ImageMapRenderer(ImageMaps plugin, BufferedImage image, int x, int y, double scale) {
-        super(true); 
+        // CORREÇÃO CRÍTICA: Mudado de 'true' para 'false'.
+        // true = Contextual (renderiza para cada player separado, causava o bug de sumir para uns)
+        // false = Global (renderiza uma vez para o servidor e envia para todos, muito mais rápido e estável)
+        super(false); 
         this.plugin = plugin;
         this.x = x;
         this.y = y;
@@ -132,6 +134,16 @@ public class ImageMapRenderer extends MapRenderer {
 
     @Override
     public void render(MapView view, MapCanvas canvas, Player player) {
+        // Verificação de Segurança:
+        // Se o buffer do canvas estiver vazio/limpo pelo servidor (ex: reload), forçamos uma atualização
+        // verificando se o primeiro pixel bate com nosso cache.
+        if (cachedPixels != null && !needsUpdate && cachedPixels.length > 0) {
+            // Se o pixel 0 do canvas for diferente do nosso cache, o canvas foi resetado pelo servidor
+            if (canvas.getPixel(0, 0) != cachedPixels[0]) {
+                needsUpdate = true;
+            }
+        }
+
         if (cachedPixels != null && needsUpdate) {
             for (int i = 0; i < cachedPixels.length; i++) {
                 int px = i % ImageMaps.MAP_WIDTH;
